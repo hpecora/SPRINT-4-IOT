@@ -1,0 +1,31 @@
+[
+    {
+        "id": "fn_parse",
+        "type": "function",
+        "z": "flow_main",
+        "name": "Parse + Persistir + Saídas",
+        "func": "// Espera JSON em msg.payload: { id, velocidade, bateria, lat, lng, timestamp }\n\nlet p;\ntry {\n  p = (typeof msg.payload === 'string') ? JSON.parse(msg.payload) : msg.payload;\n} catch (e) {\n  node.warn(\"JSON inválido em telemetria\");\n  return null;\n}\n\nconst id   = p.id || \"desconhecida\";\nconst v    = Number(p.velocidade || 0);\nconst b    = Number(p.bateria    || 0);\nconst lat  = Number(p.lat        || 0);\nconst lng  = Number(p.lng        || 0);\n\n// guardo em ms localmente; no banco uso segundos (inteiro)\nconst tsMs  = p.timestamp ? Number(p.timestamp) * 1000 : Date.now();\nconst tsSec = Math.floor(tsMs / 1000);\n\n// === Persistência em contexto (para a UI) ===\nconst store = context.get(\"motos\") || {};\nif (!store[id]) store[id] = { last: null };\n\nstore[id].last = { id, velocidade: v, bateria: b, lat, lng, timestamp: tsMs };\ncontext.set(\"motos\", store);\n\n// 1) Tabela para a UI\nconst tabela = Object.keys(store).map(k => {\n  const l = store[k].last;\n  return {\n    id: k,\n    velocidade: l.velocidade,\n    bateria: l.bateria,\n    lat: l.lat,\n    lng: l.lng,\n    atualizado: new Date(l.timestamp).toLocaleString()\n  };\n}).sort((a,b) => a.id.localeCompare(b.id));\n\n// 2) Gauge de bateria: moto ativa (ou a da mensagem atual)\nconst ativa = flow.get(\"motoAtiva\") || id;\nconst bat = (store[ativa] && store[ativa].last) ? store[ativa].last.bateria : 0;\n\n// 3) Chart: só o valor; o chart usa a hora atual no eixo X\nconst chartMsg = { topic: id, payload: v };\n\n// 4) SQL INSERT para o sqlite (parametrizado)\nconst sqlMsg = {\n  topic: \"INSERT INTO telemetria (id, velocidade, bateria, lat, lng, timestamp) VALUES (?,?,?,?,?,?)\",\n  params: [id, v, b, lat, lng, tsSec]\n};\n\n// Retornos nas 4 saídas\nreturn [\n  { payload: tabela }, // saída 1 -> ui_table\n  { payload: bat },    // saída 2 -> gauge\n  chartMsg,            // saída 3 -> chart\n  sqlMsg               // saída 4 -> sqlite\n];\n",
+        "outputs": 4,
+        "timeout": "",
+        "noerr": 0,
+        "initialize": "",
+        "finalize": "",
+        "libs": [],
+        "x": 370,
+        "y": 120,
+        "wires": [
+            [
+                "ui_table_motos"
+            ],
+            [
+                "ui_gauge_bat"
+            ],
+            [
+                "ui_chart_vel"
+            ],
+            [
+                "b838b04d4613d733"
+            ]
+        ]
+    }
+]
